@@ -1,0 +1,129 @@
+---
+title: "Machine Learning Project"
+author: "S L"
+date: "11/22/2015"
+output: html_document
+---
+```{r, echo=FALSE, warning=FALSE, error=FALSE, message=FALSE, cache=TRUE}
+library(AppliedPredictiveModeling)
+library(rpart)
+library(caret)
+library(randomForest)
+library(e1071)
+library(ipred)
+library(plyr)
+library(MASS)
+library(gbm)
+set.seed(32323)
+temp <- tempfile()
+download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv", temp, method = "libcurl")
+traindataset <- read.csv(temp, header = TRUE, dec = ",")
+unlink(temp)
+missing <- colnames(traindataset)[colSums(is.na(traindataset)) > 9000]
+NoNAtrain <- traindataset[, !names(traindataset) %in% missing]
+NoNAtrain <- NoNAtrain[, -c(1:7)]
+NoNAtrain[,1:3] <- lapply(NoNAtrain[,1:3], function(x) as.numeric(as.character(x)))
+NoNAtrain[,5:16] <- lapply(NoNAtrain[,5:16], function(x) as.numeric(as.character(x)))
+NoNAtrain[,23:25] <- lapply(NoNAtrain[,23:25], function(x) as.numeric(as.character(x)))
+NoNAtrain[,27:29] <- lapply(NoNAtrain[,27:29], function(x) as.numeric(as.character(x)))
+NoNAtrain[,36:53] <- lapply(NoNAtrain[,36:53], function(x) as.numeric(as.character(x)))
+NoNAtrain[,55:57] <- lapply(NoNAtrain[,55:57], function(x) as.numeric(as.character(x)))
+NoNAtrain[,63:75] <- lapply(NoNAtrain[,63:75], function(x) as.numeric(as.character(x)))
+NoNAtrain[,77:79] <- lapply(NoNAtrain[,77:79], function(x) as.numeric(as.character(x)))
+NoNAtrain[,84:85] <- lapply(NoNAtrain[,84:85], function(x) as.numeric(as.character(x)))
+
+NoNAtrain<- NoNAtrain[, !names(NoNAtrain) %in% c("skewness_yaw_belt", "kurtosis_yaw_belt", 
+    "amplitude_yaw_dumbbell", "kurtosis_yaw_dumbbell", "skewness_yaw_dumbbell","kurtosis_picth_belt",
+    "amplitude_yaw_forearm", "skewness_yaw_forearm", "kurtosis_yaw_forearm", "kurtosis_roll_belt","skewness_roll_belt",
+    "skewness_roll_belt.1", "max_yaw_belt", "min_yaw_belt", "amplitude_yaw_belt","kurtosis_roll_arm",
+    "kurtosis_picth_arm", "kurtosis_yaw_arm","skewness_roll_arm","skewness_pitch_arm","skewness_yaw_arm",
+    "kurtosis_roll_dumbbell","kurtosis_picth_dumbbell", "skewness_roll_dumbbell", "skewness_pitch_dumbbell","max_yaw_dumbbell",
+    "min_yaw_dumbbell", "kurtosis_roll_forearm", "kurtosis_picth_forearm", "skewness_roll_forearm","skewness_pitch_forearm",
+    "max_yaw_forearm","min_yaw_forearm", "roll_dumbbell","pitch_dumbbell","yaw_dumbbell","total_accel_dumbbell","gyros_dumbbell_x",
+    "gyros_dumbbell_y","gyros_dumbbell_z","accel_dumbbell_x","accel_dumbbell_y","accel_dumbbell_z","magnet_dumbbell_x",
+    "magnet_dumbbell_y", "magnet_dumbbell_z")]
+
+holderTrainNoNA <- createDataPartition(y=NoNAtrain$classe, p=0.6, list = FALSE)
+holder2trainNoNA <- NoNAtrain[holderTrainNoNA,]
+holder2testNoNA <- NoNAtrain[-holderTrainNoNA,]
+
+preProcTestNoNA2 <- preProcess(holder2trainNoNA[,!names(holder2trainNoNA) %in% c("classe")]+1, 
+        method="pca", pcaComp=2)
+trainNoNA2 <- predict(preProcTestNoNA2, holder2trainNoNA[,!names(holder2trainNoNA) %in% c("classe")]+1)
+testfitselectNoNAtrain2 <- train(classe ~ . , method = "rpart", preProcess="pca", trControl = 
+        trainControl(method = "cv", number = 3, allowParallel=TRUE), data = holder2trainNoNA)
+testfitselectNoNAtrain2R <- train(classe ~ . , method = "rpart", preProcess="pca", metric = "ROC", trControl = 
+      trainControl(method = "cv", number = 3, classProbs = TRUE, allowParallel=TRUE), data = holder2trainNoNA)
+
+testfitselectNoNAtrainl2 <- train(classe ~ . , method = "lda", preProcess="pca", trControl = 
+                                   trainControl(method = "cv", number = 3, allowParallel=TRUE), data = holder2trainNoNA)
+
+testfitselectNoNAtrainrf2 <- train(classe ~ . , method = "rf", preProcess="pca", prox = TRUE, trControl = 
+        trainControl(method = "cv", number = 3, allowParallel=TRUE), data = holder2trainNoNA)
+testfitselectNoNAtrainb2 <- train(classe ~ . , method = "gbm",preProcess="pca",verbose=FALSE,data =holder2trainNoNA)
+```
+
+#### Executive Summary
+
+
+Wearable devices that record physical activity, like FitBit or the Nike FuelBand, do an excellent job of collecting data to quantify movement, but still need to develop proficiency in determining performance quality of  movement. This paper builds upon prior research in determining quality of movement called "Qualitative Activity Recognition of Weight Lifting Exercises", and concludes that the random forest model is the most ideal machine learning algorithm to determine quality of movement. 
+
+#### Specific Question to Be Answered
+
+
+The data from prior research is organized in a way that categorizes the data collected from correct movement as Class A, and data collected from incorrect movement are in Classes B, C, D and E.  Because the data is structured this way, our research question is: Can we determine whether a movement is correct and therefore categorized in Class A, or incorrect and categorized in the other classes? 
+
+#### Data Exploration & Cleaning
+
+
+The data from prior research contains 160 variables for 19,622 entries. However, many variables are sparsely populated across all of the entries; therefore this analysis uses 40 of the original 160 variables.  To identify variables to delete,the number of empty/"NA" entries was considered as well as variable correlation.  For good measure, the "nearZeroVar" function was also used to help eliminate variables that had little-to-no variance and therefore would not be helpful.
+
+Because there are over 19,000 entries in the dataset, the dataset was divided and allocated into training and testing datasets using a 60%/40% split, for cross-validation purposes.  The data was further pre-processed using principle component analysis within the train function.
+
+#### The Search for the Best Predictors
+Four different training methods were applied to the final dataset: general classification tree, linear discriminate analysis, random forest and boosting.  Key training characteristics for all models included PCA pre-processing and 3-fold cross-validation resampling.
+
+1. Classification Tree using "rpart".  This method was the least accurate, at 39.5%, and therefore not selected.  The accuracy on the prediction was similar at 38.3%.  See the resulting characteristics in Appendix, Figure 1.
+
+2. Linear Discriminate Analysis using "lda".  This method was more accurate than "rpart", at 46.8%. The accuracy on the prediction was similar at 46.7%.  See the resulting characteristics  in the Appendix, Figure 2.
+
+3. Random forest using "rf".  This method was the most accurate, at 92.9%, and therefore selected as the model to use. It used a classification random forest with 500 trees and a test set error rate of 5.3%.  The accuracy on the prediction was similar at 94.8%.  See the resulting characteristics in the Appendix, Figure 3.
+
+4. Boosting using "gbm".  This method was the second most accurate methos at 74.7%.  The accuracy on the prediction was similar at 76.3%.  See the resulting characteristics  in the Appendix, Figure 4.
+
+#### Closing Thoughts on Sample Error
+
+
+All models above were designed to minimize out-of-sample error rate as much as possible, in that they all used 3-fold cross-validation except the boosting model.  Cross-validation tends to lead to good error estimates without making too many assumptions; though there was a heavy computational price to pay. 
+  
+
+
+------------------------------------------------------------
+
+#### Appendix
+
+
+**Figure 1**
+```{r, echo=FALSE}
+testfitselectNoNAtrain2
+
+```
+
+**Figure 2**
+```{r, echo=FALSE}
+testfitselectNoNAtrainl2
+
+```
+
+**Figure 3**
+```{r, echo=FALSE}
+testfitselectNoNAtrainrf2
+
+```
+
+**Figure 4**
+
+```{r, echo=FALSE}
+testfitselectNoNAtrainb2
+
+```
